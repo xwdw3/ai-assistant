@@ -10,6 +10,7 @@
 ai-assistant/
 ├── app.py            # 命令行入口：输入任务 → 展示计划 → 确认 → 执行
 ├── webapp.py         # Web 入口：单页应用，流式推送执行进度，监听 $PORT
+├── set_key.py        # 配置 API Key：写入 .env 并验证连通性
 ├── web/
 │   └── index.html    # 前端页面（原生 HTML/JS，无构建、无 CDN 依赖）
 ├── agent.py          # 核心逻辑：make_plan() 规划、execute() 带工具执行
@@ -42,6 +43,38 @@ python webapp.py          # Web 版，打开 http://127.0.0.1:8000
 你想让我做什么？
 > 帮我把这周的三个工作要点整理成一份周报
 ```
+
+## 配置 API Key
+
+三种方式，任选一种：
+
+**1. 用脚本配（推荐，输入不回显、不进终端历史）**
+
+```bash
+python set_key.py          # 粘贴 Key，自动写入 .env 并验证连通性
+python set_key.py --check  # 只验证现有 Key，不改文件
+```
+
+**2. 手动编辑 `.env`**
+
+```bash
+cp .env.example .env       # Windows: copy .env.example .env
+# 把 DEEPSEEK_API_KEY= 后面换成真实 Key
+```
+
+**3. 用系统环境变量**
+
+```bash
+# 优先级高于 .env，适合部署环境注入
+export DEEPSEEK_API_KEY=sk-xxx     # Windows: set DEEPSEEK_API_KEY=sk-xxx
+```
+
+`config.py` 固定读取**项目根目录**的 `.env`（不依赖启动目录），且 `override=False`，
+所以真实环境变量永远优先于文件。`.env` 已在 `.gitignore` 中，不会被提交。
+
+**Web 版还有第四种**：什么都不配，让访客在页面上填自己的 Key。服务端没 Key 时页面会提示需要填写，
+Key 只存在浏览器 `localStorage`，不落服务端。
+
 
 ## Web 版
 

@@ -3,15 +3,17 @@
 import os
 from pathlib import Path
 
+# 项目根目录，避免依赖启动时的工作目录
+BASE_DIR = Path(__file__).resolve().parent
+
 try:  # python-dotenv 是可选的，没装也能用系统环境变量
     from dotenv import load_dotenv
 
-    load_dotenv()
+    # 固定读项目根目录的 .env，而不是靠启动目录去猜；
+    # override=False 保证真正的环境变量优先级更高（部署环境常用这个注入配置）
+    load_dotenv(BASE_DIR / ".env", override=False)
 except ImportError:
     pass
-
-# 项目根目录，避免依赖启动时的工作目录
-BASE_DIR = Path(__file__).resolve().parent
 
 # ---- 模型服务 ----
 API_KEY = os.getenv("DEEPSEEK_API_KEY", "").strip()
