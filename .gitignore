@@ -19,3 +19,6 @@ Thumbs.db
 
 # 工具生成的本地状态
 .workbuddy/
+
+# 部署工具的应用标记文件
+.wbapp_*.genie
