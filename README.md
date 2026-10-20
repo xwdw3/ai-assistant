@@ -2,11 +2,16 @@
 
 一个命令行小工具：输入一句话任务，模型先拆成 3~5 步计划，你确认后它再带着「本地笔记工具」逐步执行，最后把结果写进 `notes/`。
 
+同时提供一层 Web 外壳（`webapp.py`），可以部署成在线页面，功能完全相同。
+
 ## 目录结构
 
 ```
 ai-assistant/
 ├── app.py            # 命令行入口：输入任务 → 展示计划 → 确认 → 执行
+├── webapp.py         # Web 入口：单页应用，流式推送执行进度，监听 $PORT
+├── web/
+│   └── index.html    # 前端页面（原生 HTML/JS，无构建、无 CDN 依赖）
 ├── agent.py          # 核心逻辑：make_plan() 规划、execute() 带工具执行
 ├── tools.py          # 本地工具实现 + 工具注册表（TOOL_MAP / TOOLS）
 ├── config.py         # 集中配置，支持环境变量 / .env 覆盖
@@ -27,7 +32,8 @@ pip install -r requirements.txt
 cp .env.example .env      # Windows: copy .env.example .env
 # 编辑 .env，填入自己的 DEEPSEEK_API_KEY
 
-python app.py
+python app.py             # 命令行版
+python webapp.py          # Web 版，打开 http://127.0.0.1:8000
 ```
 
 示例：
@@ -36,6 +42,27 @@ python app.py
 你想让我做什么？
 > 帮我把这周的三个工作要点整理成一份周报
 ```
+
+## Web 版
+
+`webapp.py` 只用标准库，不额外引入依赖。它把 `agent.execute()` 的 `on_event` 回调转成
+NDJSON 流式响应，页面因此能一条条看到「第 N 轮调用了什么」而不是干等到结束。
+
+| 接口 | 作用 |
+| --- | --- |
+| `GET /` | 单页界面 |
+| `GET /healthz` | 健康检查，返回模型名 |
+| `GET /api/config` | 只返回「服务端有没有配 Key」，**不回传 Key 本身** |
+| `POST /api/plan` | `{task, apiKey}` → `{plan, usage}` |
+| `POST /api/run` | `{task, plan, apiKey}` → NDJSON 流：`start` / `event` / `done` / `error` |
+
+**API Key 的两种来源**：服务端配了 `DEEPSEEK_API_KEY` 就直接用；没配则由访客在页面上填自己的 Key，
+存在浏览器 `localStorage`，随请求转发给模型服务，不落服务端、不写日志。每个请求用
+`agent.bind_client()` 绑定到自己的线程，因此多人同时使用不会串 Key。
+
+**并发限制**：`MAX_CONCURRENT_RUNS`（默认 2）个名额，拿不到直接返回 429，避免一个分享链接被打满额度。
+任务描述上限 2000 字，请求体上限 64KB，计划步骤上限 12 步。
+
 
 ## 配置项
 
@@ -102,4 +129,5 @@ python -m pytest tests -q
 
 - 单轮任务，无多轮对话记忆（每次运行独立）。
 - 笔记仅存为纯文本 `.txt`，无检索/索引。
-- 工具无沙箱，`save_note` 会真实写盘。
+- 工具无沙箱，`save_note` 会真实写盘。Web 版所有访客共用服务端的同一个 `notes/` 目录。
+- Web 版没有登录态，限制靠「并发名额 + 访客自带 Key」，不适合直接暴露敏感数据。

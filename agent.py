@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from dataclasses import dataclass
 from typing import Callable
 
@@ -70,6 +71,8 @@ STALL_NUDGE = (
 )
 
 _client: OpenAI | None = None
+# Web 端每个请求跑在独立线程里，用自己的 Key，不能共用全局客户端
+_local = threading.local()
 
 
 class ConfigError(RuntimeError):
@@ -80,8 +83,22 @@ class AgentError(RuntimeError):
     """运行期错误（超时、连不上），换个时间或调参数可能恢复。"""
 
 
+def build_client(api_key: str) -> OpenAI:
+    """按指定 Key 造一个客户端，供 Web 端按访客隔离使用。"""
+    return OpenAI(api_key=api_key, base_url=BASE_URL, timeout=STEP_TIMEOUT)
+
+
+def bind_client(client: OpenAI | None) -> None:
+    """把客户端绑定到当前线程；传 None 表示解绑，回到全局默认。"""
+    _local.client = client
+
+
 def get_client() -> OpenAI:
     """惰性创建客户端，缺少 Key 时给出明确提示而不是静默失败。"""
+    bound = getattr(_local, "client", None)
+    if bound is not None:  # Web 端为本次请求绑定的客户端优先
+        return bound
+
     global _client
     if _client is None:
         if not API_KEY:

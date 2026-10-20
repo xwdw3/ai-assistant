@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI 个人助理</title>
+<style>
+  :root{
+    --bg:#0e1117; --panel:#161b24; --panel-2:#1c222d; --line:#252c3a;
+    --text:#e6e9ef; --muted:#8b95a7; --accent:#7c9cff; --accent-2:#4fd1c5;
+    --warn:#ffb457; --err:#ff6b6b; --ok:#4fd18b;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:860px; margin:0 auto; padding:40px 20px 80px}
+  header{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:6px}
+  h1{font-size:22px; margin:0; letter-spacing:.2px}
+  .sub{color:var(--muted); font-size:13px}
+  .badge{
+    font-size:11px; color:var(--accent-2); border:1px solid #2b4a4a;
+    background:#12211f; padding:2px 8px; border-radius:99px;
+  }
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:14px;
+    padding:18px; margin-top:16px;
+  }
+  label{display:block; font-size:12px; color:var(--muted); margin-bottom:8px; letter-spacing:.3px}
+  textarea, input{
+    width:100%; background:var(--panel-2); color:var(--text);
+    border:1px solid var(--line); border-radius:10px; padding:12px 14px;
+    font:inherit; outline:none; transition:border-color .15s;
+  }
+  textarea{min-height:96px; resize:vertical}
+  textarea:focus, input:focus{border-color:var(--accent)}
+  .row{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:12px}
+  button{
+    font:inherit; cursor:pointer; border-radius:10px; padding:10px 18px;
+    border:1px solid transparent; transition:.15s; white-space:nowrap;
+  }
+  button:disabled{opacity:.45; cursor:not-allowed}
+  .primary{background:var(--accent); color:#0b1020; font-weight:600}
+  .primary:hover:not(:disabled){background:#93aeff}
+  .ghost{background:transparent; color:var(--text); border-color:var(--line)}
+  .ghost:hover:not(:disabled){border-color:#3a455c; background:#1a2130}
+  .chips{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px}
+  .chip{
+    font-size:12.5px; color:var(--muted); background:var(--panel-2);
+    border:1px solid var(--line); border-radius:99px; padding:5px 12px; cursor:pointer;
+  }
+  .chip:hover{color:var(--text); border-color:#3a455c}
+  .hint{font-size:12px; color:var(--muted); margin-top:8px}
+  .hint b{color:var(--warn); font-weight:500}
+  .steps{margin:0; padding-left:20px}
+  .steps li{margin:6px 0}
+  .steps li::marker{color:var(--accent)}
+  #log{
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    font-size:13px; line-height:1.75; max-height:340px; overflow:auto;
+    background:#0b0e14; border:1px solid var(--line); border-radius:10px;
+    padding:12px 14px; white-space:pre-wrap; word-break:break-word;
+  }
+  #log .t{color:#4a5568; margin-right:8px}
+  #log .ev{color:#a9b8d8}
+  #log .tool{color:var(--accent-2)}
+  #log .warn{color:var(--warn)}
+  #log .err{color:var(--err)}
+  #log .ok{color:var(--ok)}
+  #log:empty::after{content:"执行日志会显示在这里"; color:#3f495c}
+  .result{
+    white-space:pre-wrap; background:#0b0e14; border:1px solid var(--line);
+    border-radius:10px; padding:14px; margin-top:10px;
+  }
+  .meta{font-size:12px; color:var(--muted); margin-top:10px}
+  .hidden{display:none !important}
+  .dot{width:7px; height:7px; border-radius:99px; background:var(--muted); display:inline-block; margin-right:6px}
+  .dot.on{background:var(--ok); box-shadow:0 0 0 3px rgba(79,209,139,.15)}
+  .dot.busy{background:var(--warn); animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.35}}
+  .flexline{display:flex; justify-content:space-between; align-items:center; gap:10px}
+  .link{color:var(--accent); font-size:12px; cursor:pointer; text-decoration:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>AI 个人助理</h1>
+    <span class="badge">规划 → 工具执行</span>
+  </header>
+  <div class="sub">给它一个任务，它会先拆成步骤，再带着工具（笔记读写、查日期）去做。</div>
+
+  <div class="card">
+    <div class="flexline">
+      <label style="margin:0">API Key</label>
+      <a class="link" id="toggleKey">显示 / 隐藏</a>
+    </div>
+    <input id="apiKey" type="password" placeholder="sk-...（留空则使用服务端配置的 Key）" autocomplete="off">
+    <div class="hint" id="keyHint">Key 只保存在你自己的浏览器里，随请求转发给模型服务，不会写进服务器。</div>
+  </div>
+
+  <div class="card">
+    <label for="task">你想让我做什么</label>
+    <textarea id="task" placeholder="例如：把这周的三个工作要点整理成一份周报，存成笔记 2026-W43.txt"></textarea>
+    <div class="chips">
+      <span class="chip">把所有笔记列出来并总结要点</span>
+      <span class="chip">今天是几号？帮我存一条带日期的备忘</span>
+      <span class="chip">写一份本周工作汇报，存成笔记</span>
+    </div>
+    <div class="row">
+      <button class="primary" id="planBtn">① 生成计划</button>
+      <button class="ghost" id="runBtn" disabled>② 开始执行</button>
+      <span class="sub" id="status"><span class="dot"></span>就绪</span>
+    </div>
+  </div>
+
+  <div class="card hidden" id="planCard">
+    <div class="flexline"><label style="margin:0">执行计划</label><span class="sub" id="planUsage"></span></div>
+    <ol class="steps" id="planList"></ol>
+  </div>
+
+  <div class="card hidden" id="logCard">
+    <label>执行过程</label>
+    <div id="log"></div>
+    <div class="meta" id="runUsage"></div>
+  </div>
+
+  <div class="card hidden" id="resultCard">
+    <label>结果</label>
+    <div class="result" id="result"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const $ = (id) => document.getElementById(id);
+  const keyEl = $('apiKey'), taskEl = $('task'), logEl = $('log');
+  const planBtn = $('planBtn'), runBtn = $('runBtn'), statusEl = $('status');
+  const planCard = $('planCard'), planList = $('planList'), planUsage = $('planUsage');
+  const logCard = $('logCard'), resultCard = $('resultCard'), resultEl = $('result');
+  const runUsage = $('runUsage'), keyHint = $('keyHint');
+
+  let currentPlan = [];
+  let busy = false;
+
+  // ---- Key 持久化 ----
+  const saved = localStorage.getItem('ai-assistant-key') || '';
+  if (saved) keyEl.value = saved;
+  keyEl.addEventListener('change', () => {
+    const v = keyEl.value.trim();
+    v ? localStorage.setItem('ai-assistant-key', v) : localStorage.removeItem('ai-assistant-key');
+  });
+  $('toggleKey').addEventListener('click', () => {
+    keyEl.type = keyEl.type === 'password' ? 'text' : 'password';
+  });
+
+  // 服务端是否已配 Key
+  fetch('/api/config').then(r => r.json()).then(d => {
+    if (d.server_key) {
+      keyHint.innerHTML = '服务端已配置 Key，这里可以留空直接用。填自己的 Key 则走你自己的额度。';
+    } else {
+      keyHint.innerHTML = '<b>服务端未配置 Key</b>，请填一个 DeepSeek API Key 才能跑。Key 只存在你的浏览器里。';
+    }
+  }).catch(() => {});
+
+  document.querySelectorAll('.chip').forEach(el => {
+    el.addEventListener('click', () => { taskEl.value = el.textContent.trim(); });
+  });
+
+  // ---- 状态 ----
+  function setStatus(text, kind) {
+    const cls = kind === 'busy' ? 'busy' : kind === 'on' ? 'on' : '';
+    statusEl.innerHTML = '<span class="dot ' + cls + '"></span>' + text;
+  }
+  function setBusy(v) {
+    busy = v;
+    planBtn.disabled = v;
+    runBtn.disabled = v || currentPlan.length === 0;
+  }
+  function now() {
+    const d = new Date();
+    return String(d.getHours()).padStart(2, '0') + ':' +
+           String(d.getMinutes()).padStart(2, '0') + ':' +
+           String(d.getSeconds()).padStart(2, '0');
+  }
+  function appendLog(text, cls) {
+    const line = document.createElement('div');
+    line.innerHTML = '<span class="t">' + now() + '</span><span class="' + (cls || 'ev') + '"></span>';
+    line.lastChild.textContent = text;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  function clearLog() { logEl.innerHTML = ''; }
+
+  function payload() {
+    return { task: taskEl.value.trim(), apiKey: keyEl.value.trim() };
+  }
+
+  // ---- 规划 ----
+  planBtn.addEventListener('click', async () => {
+    if (busy) return;
+    const p = payload();
+    if (!p.task) { taskEl.focus(); setStatus('先写个任务', ''); return; }
+
+    setBusy(true); setStatus('正在规划...', 'busy');
+    planCard.classList.add('hidden');
+    logCard.classList.add('hidden');
+    resultCard.classList.add('hidden');
+    currentPlan = [];
+
+    try {
+      const resp = await fetch('/api/plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(p)
+      });
+      const data = await resp.json();
+      if (!data.ok) { setStatus('规划失败', ''); showError(data.error); return; }
+
+      currentPlan = data.plan || [];
+      planList.innerHTML = '';
+      currentPlan.forEach(s => {
+        const li = document.createElement('li');
+        li.textContent = s;
+        planList.appendChild(li);
+      });
+      planUsage.textContent = data.usage || '';
+      planCard.classList.remove('hidden');
+      setStatus('计划已生成，可以执行了', 'on');
+      runBtn.disabled = currentPlan.length === 0;
+    } catch (err) {
+      setStatus('网络异常', '');
+      showError('请求失败：' + err.message);
+    } finally {
+      setBusy(false);
+      runBtn.disabled = currentPlan.length === 0;
+    }
+  });
+
+  // ---- 执行（流式）----
+  runBtn.addEventListener('click', async () => {
+    if (busy || !currentPlan.length) return;
+    const p = payload();
+
+    setBusy(true); setStatus('执行中...', 'busy');
+    logCard.classList.remove('hidden');
+    resultCard.classList.add('hidden');
+    clearLog();
+    runUsage.textContent = '';
+
+    try {
+      const resp = await fetch('/api/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task: p.task, plan: currentPlan, apiKey: p.apiKey })
+      });
+
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        setStatus('启动失败', '');
+        showError(data.error || ('HTTP ' + resp.status));
+        return;
+      }
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      let finished = false;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let idx;
+        while ((idx = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, idx).trim();
+          buf = buf.slice(idx + 1);
+          if (!line) continue;
+          let evt;
+          try { evt = JSON.parse(line); } catch (e) { continue; }
+          finished = handleEvent(evt) || finished;
+        }
+      }
+      if (!finished) { setStatus('连接中断', ''); appendLog('连接提前结束，任务可能未完成', 'warn'); }
+    } catch (err) {
+      setStatus('执行失败', '');
+      appendLog('请求失败：' + err.message, 'err');
+    } finally {
+      setBusy(false);
+    }
+  });
+
+  function handleEvent(evt) {
+    if (evt.type === 'start') {
+      appendLog('开始执行，模型 ' + evt.model, 'ev');
+    } else if (evt.type === 'event') {
+      const text = evt.text || '';
+      let cls = 'ev';
+      if (text.indexOf('调用') >= 0) cls = 'tool';
+      else if (text.indexOf('[无进展]') >= 0 || text.indexOf('[预算]') >= 0) cls = 'warn';
+      appendLog(text, cls);
+    } else if (evt.type === 'done') {
+      resultEl.textContent = evt.result || '';
+      resultCard.classList.remove('hidden');
+      runUsage.textContent = evt.usage ? '本次用量：' + evt.usage : '';
+      setStatus('完成', 'on');
+      appendLog('任务完成', 'ok');
+      return true;
+    } else if (evt.type === 'error') {
+      const prefix = evt.kind === 'config' ? '[配置错误] ' : '[执行中止] ';
+      appendLog(prefix + (evt.message || ''), 'err');
+      if (evt.usage) runUsage.textContent = '本次用量：' + evt.usage;
+      setStatus('未完成', '');
+      return true;
+    }
+    return false;
+  }
+
+  function showError(msg) {
+    logCard.classList.remove('hidden');
+    appendLog(msg || '未知错误', 'err');
+  }
+})();
+</script>
+</body>
+</html>
