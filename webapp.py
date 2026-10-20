@@ -118,13 +118,20 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path in ("/", "/index.html"):
             self._serve_file(WEB_DIR / "index.html", "text/html; charset=utf-8")
+        elif path == "/favicon.ico":
+            # 页面里已用 data URI 声明图标，这里回 204 只是为了消掉浏览器的 404 噪音
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
         elif path == "/healthz":
             self._json({"ok": True, "model": agent.MODEL})
         elif path == "/api/config":
             # 只告诉前端「服务端有没有配 Key」，绝不回传 Key 本身
             self._json({"ok": True, "server_key": bool(agent.API_KEY), "model": agent.MODEL})
+        elif path.startswith("/api/"):
+            self._json({"ok": False, "error": "接口不存在：" + path}, 404)
         else:
-            self._json({"ok": False, "error": "未找到"}, 404)
+            self._not_found(path)
 
     def do_POST(self) -> None:
         path = self.path.split("?", 1)[0]
@@ -133,7 +140,7 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/run":
             self._handle_run()
         else:
-            self._json({"ok": False, "error": "未找到"}, 404)
+            self._json({"ok": False, "error": "接口不存在：" + path}, 404)
 
     def _serve_file(self, file_path: Path, content_type: str) -> None:
         try:
@@ -145,6 +152,40 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _not_found(self, path: str) -> None:
+        """浏览器直接访问错误路径时给个能看懂的页面，而不是一段裸 JSON。"""
+        # 回跳链接要带上原查询串，否则会丢掉 sharecode 被网关拦成 403
+        query = self.path.split("?", 1)[1] if "?" in self.path else ""
+        back = "/" + (f"?{query}" if query else "")
+        safe_path = path.replace("<", "&lt;").replace(">", "&gt;")
+        page = f"""<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>页面不存在</title>
+<style>
+ body{{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+   background:#0e1117;color:#e6e9ef;font:15px/1.7 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}}
+ .box{{max-width:460px;padding:36px 32px;text-align:center}}
+ h1{{font-size:44px;margin:0;color:#7c9cff;letter-spacing:2px}}
+ p{{color:#8b95a7;margin:14px 0}}
+ code{{background:#161b24;border:1px solid #252c3a;border-radius:6px;padding:2px 8px;color:#e6e9ef}}
+ a{{display:inline-block;margin-top:18px;background:#7c9cff;color:#0b1020;text-decoration:none;
+   font-weight:600;padding:10px 22px;border-radius:10px}}
+</style></head>
+<body><div class="box">
+ <h1>404</h1>
+ <p>没有这个页面：<code>{safe_path}</code></p>
+ <p>正确的入口只有一个，就是应用的根地址。</p>
+ <a href="{back}">回到首页</a>
+</div></body></html>"""
+        body = page.encode("utf-8")
+        self.send_response(404)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
 
